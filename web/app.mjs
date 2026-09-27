@@ -44,23 +44,32 @@ function markStale() {
 }
 
 // 将整数坐标映射到 SVG 视口（y 轴翻转，留边距）
+// 核验与几何比较始终用 BigInt 精确进行；SVG 仅用于绘制，转成
+// Number 投影（坐标跨度为 BigInt 差值，可能超出安全整数，按比例转 Number）。
 function makeProjection(points) {
   const W = 800;
   const H = 560;
   const M = 56;
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = Math.max(maxX - minX, 1);
-  const spanY = Math.max(maxY - minY, 1);
-  const scale = Math.min((W - 2 * M) / spanX, (H - 2 * M) / spanY);
+  const xs = points.map((p) => BigInt(p.x));
+  const ys = points.map((p) => BigInt(p.y));
+  let minX = xs[0]; let maxX = xs[0];
+  let minY = ys[0]; let maxY = ys[0];
+  for (let i = 1; i < xs.length; i += 1) {
+    if (xs[i] < minX) minX = xs[i];
+    if (xs[i] > maxX) maxX = xs[i];
+    if (ys[i] < minY) minY = ys[i];
+    if (ys[i] > maxY) maxY = ys[i];
+  }
+  const spanX = maxX - minX > 0n ? maxX - minX : 1n;
+  const spanY = maxY - minY > 0n ? maxY - minY : 1n;
+  const scale = Math.min(
+    (W - 2 * M) / Number(spanX),
+    (H - 2 * M) / Number(spanY),
+  );
   return {
     W, H,
-    sx: (x) => M + (x - minX) * scale,
-    sy: (y) => H - M - (y - minY) * scale,
+    sx: (x) => M + Number(BigInt(x) - minX) * scale,
+    sy: (y) => H - M - Number(BigInt(y) - minY) * scale,
   };
 }
 

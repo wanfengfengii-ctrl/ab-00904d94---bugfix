@@ -8,7 +8,7 @@ import {
   nonIncidentEdgeContact,
   pointStrictlyInsideTriangle,
 } from '../src/geometry.mjs';
-import { validMesh, crossingMesh } from '../src/fixtures.mjs';
+import { validMesh, crossingMesh, hugeIntMesh } from '../src/fixtures.mjs';
 
 function run(points, triangles) {
   return verifyMesh(points, triangles.map((t) => t.map(Number)));
@@ -50,6 +50,23 @@ test('夹具：交叉网格被拒绝，首项证据为不共端边交叉', () =>
   assert.deepEqual([r.error.edgeIndex + 1, r.error.edgeIndex2 + 1], [2, 4]);
 });
 
+test('夹具：超大整数（2^53+1）有效网格通过，相邻坐标不重合', () => {
+  const { points, errors } = parsePoints(hugeIntMesh.pointsText);
+  assert.deepEqual(errors, []);
+  // 解析结果保持 BigInt 精度：2^53 与 2^53+1 必须可区分
+  assert.equal(points[0].x, 9007199254740992n);
+  assert.equal(points[1].x, 9007199254740993n);
+  assert.notEqual(points[0].x, points[1].x);
+  const { triangles } = parseTriangles(hugeIntMesh.trianglesText);
+  const r = verifyMesh(points, triangles);
+  assert.ok(r.ok, r.error?.message);
+  assert.deepEqual(r.data.boundaryLoop, [1, 2, 3, 4]);
+  const internal = r.data.edges.filter((e) => e.faces.length === 2);
+  assert.equal(internal.length, 1);
+  const boundary = r.data.edges.filter((e) => e.faces.length === 1);
+  assert.equal(boundary.length, 4);
+});
+
 test('合法的双正方形网格通过，边界为单环', () => {
   const r = run(SQUARE_POINTS, SQUARE_TRIS);
   assert.ok(r.ok, r.error?.message);
@@ -77,6 +94,30 @@ test('测点坐标不得重合', () => {
     { id: 3, x: 0, y: 1 }, { id: 4, x: 0, y: 0 },
   ];
   assert.equal(run(pts, [[1, 2, 3]]).error.code, 'POINT_DUP_COORD');
+});
+
+test('超大整数下真正重合的坐标仍被识别，而相邻超大整数不重合', () => {
+  const B = 9007199254740992n;
+  const dup = run(
+    [
+      { id: 1, x: B, y: B }, { id: 2, x: B + 1n, y: B },
+      { id: 3, x: B + 1n, y: B + 1n }, { id: 4, x: B, y: B },
+    ],
+    [[1, 2, 3]],
+  );
+  assert.equal(dup.ok, false);
+  assert.equal(dup.error.code, 'POINT_DUP_COORD');
+  assert.equal(dup.error.pointId, 4);
+
+  const distinct = run(
+    [
+      { id: 1, x: B, y: B }, { id: 2, x: B + 1n, y: B },
+      { id: 3, x: B + 1n, y: B + 1n }, { id: 4, x: B, y: B + 1n },
+    ],
+    [[1, 2, 3], [1, 3, 4]],
+  );
+  assert.ok(distinct.ok, distinct.error?.message);
+  assert.deepEqual(distinct.data.boundaryLoop, [1, 2, 3, 4]);
 });
 
 test('三角形引用未知编号被拒绝', () => {
@@ -228,6 +269,18 @@ test('解析器：错误行被收集且支持注释与中文逗号', () => {
   const { points, errors } = parsePoints(text);
   assert.equal(points.length, 3);
   assert.ok(errors.some((e) => e.includes('坏行')));
+});
+
+test('解析器：超过安全整数范围的坐标按 BigInt 精确保留', () => {
+  const text = [
+    '1 9007199254740992 9007199254740992',
+    '2 9007199254740993 -9007199254740993',
+  ].join('\n');
+  const { points, errors } = parsePoints(text);
+  assert.deepEqual(errors, []);
+  assert.equal(points[0].x, 9007199254740992n);
+  assert.equal(points[1].x, 9007199254740993n);
+  assert.equal(points[1].y, -9007199254740993n);
 });
 
 test('几何工具：BigInt 叉积与点在开线段内', () => {

@@ -1,6 +1,7 @@
 // 测点 / 三角形录入文本解析。
 // 每行一条记录，空白或逗号分隔，# 开头为注释。
-// 测点：编号 x y（均为整数，编号唯一）
+// 测点：编号 x y（均为整数，编号唯一）；坐标按 BigInt 精确解析，
+//       允许超过 Number.MAX_SAFE_INTEGER 的任意大小整数。
 // 三角形：a b c（按逆时针给出的三个测点编号）
 
 const INTEGER = /^[+-]?\d+$/;
@@ -29,7 +30,7 @@ export function parsePoints(text) {
       errors.push(`${where}：编号与坐标必须全部为整数`);
       continue;
     }
-    points.push({ id: Number(idTok), x: Number(xTok), y: Number(yTok) });
+    points.push({ id: Number(idTok), x: BigInt(xTok), y: BigInt(yTok) });
   }
   return { points, errors };
 }
@@ -54,7 +55,7 @@ export function parseTriangles(text) {
 }
 
 export function pointsToText(points) {
-  return points.map((p) => `${p.id} ${p.x} ${p.y}`).join('\n');
+  return points.map((p) => `${p.id} ${p.x.toString()} ${p.y.toString()}`).join('\n');
 }
 
 export function trianglesToText(triangles) {
