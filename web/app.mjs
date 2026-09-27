@@ -2,6 +2,7 @@
 // 核验逻辑全部来自 src/ 下的同一份模块，无网络请求。
 
 import { verifyMesh } from './verify.mjs';
+import { toBig } from './geometry.mjs';
 import {
   parsePoints,
   parseTriangles,
@@ -43,24 +44,26 @@ function markStale() {
   triBody.innerHTML = '';
 }
 
-// 将整数坐标映射到 SVG 视口（y 轴翻转，留边距）
+// 将整数坐标映射到 SVG 视口（y 轴翻转，留边距）。
+// 坐标可以是任意大小的 BigInt：先在整数域求相对偏移再转 Number，
+// 相邻的超大整数坐标（如 2^53 与 2^53+1）在图上仍然可分。
 function makeProjection(points) {
   const W = 800;
   const H = 560;
   const M = 56;
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = Math.max(maxX - minX, 1);
-  const spanY = Math.max(maxY - minY, 1);
-  const scale = Math.min((W - 2 * M) / spanX, (H - 2 * M) / spanY);
+  const xs = points.map((p) => toBig(p.x));
+  const ys = points.map((p) => toBig(p.y));
+  const minX = xs.reduce((a, b) => (a < b ? a : b));
+  const maxX = xs.reduce((a, b) => (a > b ? a : b));
+  const minY = ys.reduce((a, b) => (a < b ? a : b));
+  const maxY = ys.reduce((a, b) => (a > b ? a : b));
+  const spanX = maxX > minX ? maxX - minX : 1n;
+  const spanY = maxY > minY ? maxY - minY : 1n;
+  const scale = Math.min((W - 2 * M) / Number(spanX), (H - 2 * M) / Number(spanY));
   return {
     W, H,
-    sx: (x) => M + (x - minX) * scale,
-    sy: (y) => H - M - (y - minY) * scale,
+    sx: (x) => M + Number(toBig(x) - minX) * scale,
+    sy: (y) => H - M - Number(toBig(y) - minY) * scale,
   };
 }
 

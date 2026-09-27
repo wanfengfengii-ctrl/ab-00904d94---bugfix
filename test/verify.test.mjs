@@ -8,7 +8,7 @@ import {
   nonIncidentEdgeContact,
   pointStrictlyInsideTriangle,
 } from '../src/geometry.mjs';
-import { validMesh, crossingMesh } from '../src/fixtures.mjs';
+import { validMesh, crossingMesh, hugeCoordMesh } from '../src/fixtures.mjs';
 
 function run(points, triangles) {
   return verifyMesh(points, triangles.map((t) => t.map(Number)));
@@ -48,6 +48,38 @@ test('夹具：交叉网格被拒绝，首项证据为不共端边交叉', () =>
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'EDGE_CROSS');
   assert.deepEqual([r.error.edgeIndex + 1, r.error.edgeIndex2 + 1], [2, 4]);
+});
+
+test('夹具：超大整数坐标的单位正方形网格通过核验，边界环唯一', () => {
+  const { points, errors: e1 } = parsePoints(hugeCoordMesh.pointsText);
+  const { triangles, errors: e2 } = parseTriangles(hugeCoordMesh.trianglesText);
+  assert.deepEqual(e1, []);
+  assert.deepEqual(e2, []);
+  const r = verifyMesh(points, triangles);
+  assert.ok(r.ok, r.error?.message);
+  assert.deepEqual(r.data.boundaryLoop, [1, 2, 3, 4]);
+  const internal = r.data.edges.filter((e) => e.faces.length === 2);
+  assert.equal(internal.length, 1); // 仅对角线 1-3 为内部边
+});
+
+test('解析器：超过 2^53 的相邻整数坐标按原值精确保留', () => {
+  const { points, errors } = parsePoints(hugeCoordMesh.pointsText);
+  assert.deepEqual(errors, []);
+  assert.equal(points[0].x, 9007199254740992n);
+  assert.equal(points[1].x, 9007199254740993n);
+  // 相邻但不同：Number 会把两者舍入成同一个值，BigInt 不会
+  assert.notEqual(points[0].x, points[1].x);
+  assert.equal(Number(9007199254740993n) === Number(9007199254740992n), true);
+});
+
+test('超大整数坐标真正重合时仍报 POINT_DUP_COORD', () => {
+  const pts = [
+    { id: 1, x: 9007199254740993n, y: 0n },
+    { id: 2, x: 0n, y: 0n },
+    { id: 3, x: 0n, y: 9007199254740993n },
+    { id: 4, x: 9007199254740993n, y: 0n },
+  ];
+  assert.equal(run(pts, [[1, 2, 3]]).error.code, 'POINT_DUP_COORD');
 });
 
 test('合法的双正方形网格通过，边界为单环', () => {

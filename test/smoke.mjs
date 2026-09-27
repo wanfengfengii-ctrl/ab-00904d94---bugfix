@@ -1,7 +1,9 @@
 // 业务冒烟：
 // 1) 启动构建产物上的静态服务器，确认 /healthz 与首页可用；
 // 2) 载入一份有效网格，必须通过；
-// 3) 载入一份边交叉网格，必须以 EDGE_CROSS 拒绝。
+// 3) 载入一份边交叉网格，必须以 EDGE_CROSS 拒绝；
+// 4) 载入一份超大整数坐标网格（超过 2^53 的相邻整数），必须通过；
+// 5) 确认构建产物可被 Node 直接载入。
 // 任一失败即以非零退出码报告。
 
 import { spawn } from 'node:child_process';
@@ -10,7 +12,7 @@ import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { verifyMesh } from '../src/verify.mjs';
 import { parsePoints, parseTriangles } from '../src/parse.mjs';
-import { validMesh, crossingMesh } from '../src/fixtures.mjs';
+import { validMesh, crossingMesh, hugeCoordMesh } from '../src/fixtures.mjs';
 
 const PORT = process.env.SMOKE_WEB_PORT || 8911;
 let failures = 0;
@@ -100,10 +102,24 @@ async function main() {
     if (r.error) console.log(`    证据：${r.error.message}`);
   }
 
+  console.log('冒烟 4：载入超大整数坐标网格（相邻整数不得判重合）');
+  {
+    const { points, errors: e1 } = parsePoints(hugeCoordMesh.pointsText);
+    const { triangles, errors: e2 } = parseTriangles(hugeCoordMesh.trianglesText);
+    assert.deepEqual(e1, []);
+    assert.deepEqual(e2, []);
+    const r = verifyMesh(points, triangles);
+    check('超大整数坐标网格必须核验通过', () => assert.ok(r.ok, r.error?.message));
+    check('超大整数坐标网格边界为单一闭环 1→2→3→4', () => {
+      assert.deepEqual(r.data?.boundaryLoop, [1, 2, 3, 4]);
+    });
+  }
+
   // 确认构建产物中的模块也能被 Node 直接载入（防止构建漏拷）
-  console.log('冒烟 4：构建产物完整性');
+  console.log('冒烟 5：构建产物完整性');
   {
     const distVerify = await import(pathToFileURL(`${process.cwd()}/dist/assets/verify.mjs`));
+    const distParse = await import(pathToFileURL(`${process.cwd()}/dist/assets/parse.mjs`));
     const r = distVerify.verifyMesh(
       [
         { id: 1, x: 0, y: 0 }, { id: 2, x: 1, y: 0 },
@@ -112,6 +128,13 @@ async function main() {
       [[1, 2, 3], [1, 3, 4]],
     );
     check('dist 产物中的核验器可独立运行', () => assert.ok(r.ok, r.error?.message));
+    const { points } = distParse.parsePoints(hugeCoordMesh.pointsText);
+    const { triangles } = distParse.parseTriangles(hugeCoordMesh.trianglesText);
+    const rh = distVerify.verifyMesh(points, triangles);
+    check('dist 产物同样接受超大整数坐标网格', () => {
+      assert.ok(rh.ok, rh.error?.message);
+      assert.deepEqual(rh.data?.boundaryLoop, [1, 2, 3, 4]);
+    });
   }
 
   if (failures > 0) {

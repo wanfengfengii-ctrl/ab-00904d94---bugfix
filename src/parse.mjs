@@ -2,6 +2,10 @@
 // 每行一条记录，空白或逗号分隔，# 开头为注释。
 // 测点：编号 x y（均为整数，编号唯一）
 // 三角形：a b c（按逆时针给出的三个测点编号）
+//
+// 坐标解析为 BigInt：录入文本允许任意大小的整数，Number 无法精确
+// 表示超过 2^53 的整数（如 9007199254740993 会被舍入为
+// 9007199254740992），直接把不同坐标坍缩成同一坐标。编号仍为 Number。
 
 const INTEGER = /^[+-]?\d+$/;
 
@@ -29,7 +33,7 @@ export function parsePoints(text) {
       errors.push(`${where}：编号与坐标必须全部为整数`);
       continue;
     }
-    points.push({ id: Number(idTok), x: Number(xTok), y: Number(yTok) });
+    points.push({ id: Number(idTok), x: BigInt(xTok), y: BigInt(yTok) });
   }
   return { points, errors };
 }
